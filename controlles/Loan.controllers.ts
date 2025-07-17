@@ -2,6 +2,7 @@ import { Loan } from "../generated/prisma";
 import { Request, Response } from "express";
 import prisma from "../utils/prisma";
 import { title } from "process";
+import { sendMail } from "../utils/mailer";
 
 interface LoanRequest {
     userId: string;
@@ -16,6 +17,7 @@ const LoanController = {
             const { userId, booksIds, back }: LoanRequest = req.body;
 
             if (!userId || !booksIds || !back || !Array.isArray(booksIds)) { 
+                // "!Array.isArray(booksIds) " to check if booksIds is an array
                 res.status(400).json({ msg: "all fields are required" });
             }
 
@@ -29,8 +31,9 @@ const LoanController = {
 
             // check if books exist
             const books = await prisma.books.findMany({
-                where: { id: { in: booksIds } }, 
+                where: { id: { in: booksIds } }, // " in: " to check if booksIds is an array
             })
+
             // check if all books exist
             if (books.length !== booksIds.length) {
                 return res.status(400).json({ msg: "one or some books does not exist" });
@@ -49,8 +52,10 @@ const LoanController = {
                     userId,
                     back,
                     book: {
-                        connect: booksIds.map((id: string) => ({ id })), }
+                        // "connect: " to connect books to loan
+                        connect: booksIds.map((id: string) => ({ id })), } 
                 },
+                // include books and users : to get their data
                 include: { book: true, User: true }
             });
 
@@ -184,6 +189,20 @@ const LoanController = {
 
             if (!profile) res.status(400).json({ msg: "Emprunt non trouvé" });
             res.status(200).json({ msg: "Emprunt supprimé" });
+
+            // 
+            const reservedUsers = await prisma.notification.findMany({
+                where: { loanId: LoanId },
+                include: { User: true },
+            })
+
+            for (const notify of reservedUsers) {
+                await sendMail( 
+                    notify.User.email,
+                    "Livre disponible",
+                    `Bonjour ${notify.User.name}, le livre ${loan.book.map((book) => book.title)} est disponible`
+                )
+            }
         } catch (error) {
             res.status(500).json({ msg: "server error try latter" });
         }
